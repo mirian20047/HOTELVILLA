@@ -1,0 +1,268 @@
+================================================================================
+ DESPLIEGUE GRATUITO PASO A PASO - HOTEL LA VILLA DE ROEL
+ Backend FastAPI + MySQL + Frontend React/Vite
+ Fecha: 2026-10-16
+================================================================================
+
+--------------------------------------------------------------------------------
+ 0. RESUMEN: QUE HERRAMIENTAS GRATUITAS VAS A USAR (100% sin pagar)
+--------------------------------------------------------------------------------
+ | Capa     | Herramienta gratuita recomendada | Alternativa gratis |
+ |----------|----------------------------------|--------------------|
+ | Codigo   | Git + GitHub (repo gratis)       | GitLab / Bitbucket |
+ | Base de datos MySQL | Clever Cloud MySQL (free ~256MB) | AlwaysData (100MB free) / Railway trial / db4free (solo pruebas) |
+ | Backend FastAPI | Render Free Web Service (750h/mes, se duerme) | Koyeb Free / Railway trial / Fly.io free |
+ | Frontend React | Vercel Free (recomendado) | Netlify Free / Cloudflare Pages |
+ | Utilidades | MySQL Workbench + Postman + UptimeRobot (anti-sleep gratis) | - |
+
+ Por que esta combinacion?
+  - Tu backend es MySQL-especifico (SHOW COLUMNS, backticks). Render NO da
+    MySQL gratis, por eso la BD va en Clever Cloud (MySQL real gratis).
+  - Render Free acepta Python + pip + uvicorn sin tarjeta.
+  - Vercel acepta Vite/React gratis con build automatico desde GitHub.
+  - Todo se conecta por variables de entorno, sin cambiar logica de negocio.
+
+ Costo total: S/ 0.00 / $ 0.00
+ Limitaciones gratis que debes poner en tu informe:
+  - Render free se duerme a los 15 min sin trafico (primer request tarda 30-50s).
+  - Clever Cloud free tiene espacio y conexiones limitadas (suficiente para demo).
+  - Uploads en Render free son efimeros (se borran al redeploy) -> para informe
+    aclarar que fotos son temporales o usar Cloudinary free si quieres persistencia.
+
+--------------------------------------------------------------------------------
+ 1. REQUISITOS PREVIOS (en tu PC Windows)
+--------------------------------------------------------------------------------
+ 1. Tener el proyecto corriendo en local (ya lo tienes):
+    backend en http://127.0.0.1:8000/api/health -> Conectado a MySQL
+    frontend en http://localhost:5173
+ 2. Instalar:
+    - Git for Windows (git --version)
+    - Python 3.14 + Node 24 (ya los tienes)
+    - Cuenta gratis en: github.com, render.com, vercel.com, clever-cloud.com
+      (registrate con tu correo UTP/universidad, no piden tarjeta)
+ 3. Verificar:
+    python --version
+    node --version
+    git --version
+
+--------------------------------------------------------------------------------
+ 2. PASO 1: PREPARAR EL CODIGO PARA PRODUCCION (obligatorio, 15 min)
+--------------------------------------------------------------------------------
+ Si despliegas tal cual, Render falla por 3 motivos. Arreglalos asi:
+
+ A) Crear backend/requirements.txt (ahora esta VACIO):
+    Activa tu venv y congela:
+      cd backend
+      .\venv\Scripts\Activate.ps1
+      pip freeze > requirements.txt
+    Debe contener minimo: fastapi, uvicorn, sqlalchemy, pymysql, pydantic,
+    email-validator, python-jose, bcrypt, python-dotenv, python-multipart,
+    pillow, greenlet. Verifica que requirements.txt ya no pese 0 KB.
+
+ B) Crear backend/Procfile (arranque en Render, sin extension):
+    Contenido de 1 linea:
+      web: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    (Render inyecta $PORT automatico, no uses 8000 fijo)
+
+ C) Crear backend/render.yaml (opcional pero recomendado para tu informe):
+    services:
+      - type: web
+        name: hotel-villa-roel-api
+        env: python
+        buildCommand: pip install -r requirements.txt
+        startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+        envVars:
+          - key: DATABASE_URL
+            sync: false
+          - key: SECRET_KEY
+            generateValue: true
+
+ D) Hacer config.py leer .env (tu config.py tiene URL hardcodeada root/root):
+    Cambia esta linea:
+      DATABASE_URL = "mysql+pymysql://root:root@localhost:3306/gestion_hotelera"
+    Por:
+      DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://root:root@localhost:3306/gestion_hotelera")
+    Asi en local sigue igual, y en Render usa la de Clever Cloud.
+
+ E) Ampliar CORS en backend/app/main.py (ahora solo localhost):
+    Cambia:
+      allow_origins=["http://localhost:5173", "http://localhost:3000"]
+    Por (temporal para desplegar):
+      allow_origins=["http://localhost:5173", "http://localhost:3000",
+        "https://tu-frontend.vercel.app"]
+    Cuando tengas la URL de Vercel, reemplazala. O usa ["*"] solo para demo
+    (no recomendado en prod real, pero valido para informe universitario).
+
+ F) Frontend: crear frontend/.env.production (URL del backend):
+    Contenido:
+      VITE_API_URL=https://tu-backend.onrender.com/api
+    Y en frontend/src/api/axios.ts cambia baseURL: '/api' por:
+      baseURL: import.meta.env.VITE_API_URL || '/api'
+    Asi en local usa proxy Vite, y en Vercel usa Render.
+
+ G) Subir uploads: crea backend/.gitignore si no existe y agrega:
+      venv/
+      __pycache__/
+      uploads/tipos/*
+      !uploads/tipos/.gitkeep
+    (No subas tu venv de 500MB a GitHub, Render lo instala solo)
+
+--------------------------------------------------------------------------------
+ 3. PASO 2: SUBIR A GITHUB (5 min)
+--------------------------------------------------------------------------------
+ 1. En https://github.com/new crea repo: hotel_la_villa_de_roel (Publico, sin README)
+ 2. En tu PC:
+      cd C:\Users\WIN10\Desktop\Proyectos\hotel_la_villa_de_roel
+      git init
+      git add backend/app backend/requirements.txt backend/Procfile backend/render.yaml frontend/src frontend/*.json frontend/*.ts frontend/*.js frontend/index.html .gitignore
+      git commit -m "Sistema hotelero listo para despliegue"
+      git branch -M main
+      git remote add origin https://github.com/TU_USUARIO/hotel_la_villa_de_roel.git
+      git push -u origin main
+ 3. Verifica en GitHub que esten las carpetas backend/ y frontend/.
+
+--------------------------------------------------------------------------------
+ 4. PASO 3: CREAR MYSQL GRATIS EN CLEVER CLOUD (10 min)
+--------------------------------------------------------------------------------
+ 1. Entra a https://www.clever-cloud.com -> Sign up gratis -> Addon -> MySQL
+ 2. Crea addon MySQL (plan DEV free):
+    Nombre: hotel-roel-db | Region: Paris o Virginia (la mas cercana)
+ 3. Copia las credenciales que te da (Host, Port, User, Password, Database).
+    Ejemplo: mysql://uxxxx:pxxxx@host:3306/bxxxx
+ 4. Arma tu DATABASE_URL formato SQLAlchemy:
+    mysql+pymysql://USUARIO:PASSWORD@HOST:PORT/BASE_DATOS
+    Ejemplo:
+    mysql+pymysql://ux123:pass123@abc-mysql.clever-cloud.com:3306/bhotel123
+ 5. Conectate desde MySQL Workbench con esos datos y ejecuta tu script .sql
+    de creacion de tablas (el mismo que usaste en localhost). Luego inserta
+    admin/recepcionista con tus hashes de backend/generar.py.
+ 6. Prueba: SELECT * FROM Usuarios; debe mostrar 2 filas.
+
+ Alternativa si Clever pide tarjeta: usa https://www.alwaysdata.com (MySQL 100MB
+ gratis) con los mismos pasos. Solo para pruebas rapidas: https://www.db4free.net
+ (se borra cada cierto tiempo, mencionalo en tu informe).
+
+--------------------------------------------------------------------------------
+ 5. PASO 4: DESPLEGAR BACKEND EN RENDER (10 min)
+--------------------------------------------------------------------------------
+ 1. Entra a https://render.com -> New + -> Web Service -> Connect GitHub ->
+    selecciona hotel_la_villa_de_roel
+ 2. Configura:
+    Name: hotel-villa-roel-api
+    Root Directory: backend
+    Environment: Python 3
+    Build Command: pip install -r requirements.txt
+    Start Command: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    Instance: Free
+ 3. Environment Variables (Add):
+    DATABASE_URL = mysql+pymysql://... (la de Clever Cloud del paso 4)
+    SECRET_KEY = pega una clave larga aleatoria (genera en https://randomkeygen.com)
+    ALGORITHM = HS256
+    ACCESS_TOKEN_EXPIRE_MINUTES = 480
+ 4. Deploy -> espera 3-5 min. Log debe decir "Uvicorn running" y "Application startup complete".
+ 5. Prueba en navegador:
+    https://hotel-villa-roel-api.onrender.com/ -> {"mensaje":"Bienvenido..."}
+    https://hotel-villa-roel-api.onrender.com/api/health -> {"status":"Conectado a MySQL exitosamente"}
+    Si dice Error de conexion, revisa DATABASE_URL y que Clever permita IPs externas.
+ 6. Guarda tu URL backend, la necesitaras para Vercel.
+    Ejemplo: https://hotel-villa-roel-api.onrender.com
+
+ Truco anti-sleep gratis (para exposicion): crea cuenta en https://uptimerobot.com
+ y agrega monitor HTTP cada 5 min a tu /api/health. Asi no se duerme en tu demo.
+
+--------------------------------------------------------------------------------
+ 6. PASO 5: DESPLEGAR FRONTEND EN VERCEL (8 min)
+--------------------------------------------------------------------------------
+ 1. Entra a https://vercel.com -> Add New Project -> Import GitHub repo
+ 2. Configura:
+    Framework Preset: Vite (autodetecta)
+    Root Directory: frontend
+    Build Command: npm run build (viene de package.json: tsc -b && vite build)
+    Output Directory: dist
+    Install Command: npm install
+ 3. Environment Variables:
+    VITE_API_URL = https://hotel-villa-roel-api.onrender.com/api
+    (usa tu URL real del paso 5 + /api)
+ 4. Deploy -> te da URL: https://hotel-villa-roel.vercel.app
+ 5. Vuelve a Render y actualiza CORS en main.py con esa URL exacta, haz
+    git push, Render redespliega solo (2 min).
+ 6. Prueba flujo completo:
+    Abre https://hotel-villa-roel.vercel.app/login -> login admin/admin123 ->
+    Dashboard debe cargar KPIs (si tarda 50s la primera vez es el sleep de Render, normal).
+
+ Si Vercel falla build por TypeScript: revisa `npm run build` en local primero
+ y corrige errores de `noUnusedLocals` antes de subir.
+
+ Alternativa: Netlify (Build: frontend, Publish: frontend/dist) o
+ Cloudflare Pages (mismo). Vercel es el mas simple para Vite.
+
+--------------------------------------------------------------------------------
+ 7. PASO 6: VERIFICACION FINAL (checklist para tu informe)
+--------------------------------------------------------------------------------
+ [ ] /api/health en Render dice Conectado a MySQL
+ [ ] Login funciona desde URL Vercel (token se guarda)
+ [ ] Dashboard carga ocupacion/ingresos (usa cache 30s)
+ [ ] Crear Cliente + Reserva + Check-In + Folio/Pago funciona
+ [ ] Reportes solo entra Administrador (prueba con recepcionista -> 403)
+ [ ] Fotos tipos habitacion suben (nota: se borran al redeploy en plan free)
+ [ ] Recarga pagina en /dashboard no da 404 (Vercel rewrites SPA OK por defecto)
+
+ Comandos de evidencia para capturas:
+  curl https://tu-backend.onrender.com/api/health
+  curl -X POST https://tu-backend.onrender.com/api/auth/login -H "Content-Type: application/json" -d "{\"username\":\"admin\",\"password\":\"admin123\"}"
+
+--------------------------------------------------------------------------------
+ 8. ARQUITECTURA FINAL DESPLEGADA (para dibujar en tu informe)
+--------------------------------------------------------------------------------
+  Usuario (navegador)
+     |
+     v
+  Vercel (frontend React dist) --VITE_API_URL--> Render (uvicorn FastAPI /api)
+                                                        |
+                                                        v
+                                               Clever Cloud (MySQL gestion_hotelera)
+  GitHub (codigo) --> auto-deploy a Render + Vercel en cada push a main
+
+ Diagrama texto:
+  [PC Dev: Vite 5173 proxy /api -> Uvicorn 8000 + MySQL local]
+   se transforma en
+  [Vercel HTTPS -> Render HTTPS /api -> Clever MySQL TCP 3306]
+
+--------------------------------------------------------------------------------
+ 9. QUE PONER EN TU INFORME (plantilla)
+--------------------------------------------------------------------------------
+ 1. Portada: titulo, curso, integrantes, docente, ciclo.
+  2. Objetivo del despliegue: disponibilidad 24/7 demo sin costo.
+  3. Tabla de herramientas (seccion 0) con justificacion (por que Render y no
+     Heroku que ya no es gratis, por que Clever MySQL y no SQLite).
+  4. Pasos 1-6 con capturas (GitHub repo, Clever credenciales tapadas,
+     Render logs OK, Vercel URL, login funcional).
+  5. Variables de entorno (lista nombres, NO valores reales de SECRET/PASSWORD).
+  6. Limitaciones del plan gratuito + propuesta de mejora (plan pago, S3 para
+     imagenes, Postgres, dominio propio, HTTPS ya incluido).
+  7. Conclusiones + URL finales + credenciales demo (admin/admin123).
+
+--------------------------------------------------------------------------------
+ 10. COMANDOS RAPIDOS DE EMERGENCIA
+--------------------------------------------------------------------------------
+ # Ver logs backend local con DB nube (probar antes de Render):
+ $env:DATABASE_URL="mysql+pymysql://user:pass@host:3306/base"
+ .\backend\venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
+
+ # Rebuild frontend local con URL nube:
+ cd frontend
+ $env:VITE_API_URL="https://tu-backend.onrender.com/api"
+ npm run build
+ npm run preview
+
+ # Actualizar prod (cualquier cambio):
+ git add -A
+ git commit -m "fix cors prod"
+ git push origin main
+ # Render + Vercel redespliegan solos en 2-4 min.
+
+================================================================================
+ FIN - Si un paso falla, revisa en este orden: 1) requirements.txt 2) DATABASE_URL
+ 3) CORS 4) VITE_API_URL 5) logs de Render (Dashboard -> Logs).
+ Documento generado por analisis automatico del codigo real del proyecto.
+================================================================================

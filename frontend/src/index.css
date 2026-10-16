@@ -1,0 +1,225 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
+
+  --color-ink-950: #0b1526;
+  --color-ink-900: #101f38;
+  --color-ink-800: #1a2f52;
+  --color-ink-700: #274067;
+
+  --color-gold-300: #ecd9ac;
+  --color-gold-400: #ddbe7e;
+  --color-gold-500: #c9a86a;
+  --color-gold-600: #b08d4f;
+
+  --color-cream-50: #faf8f3;
+  --color-cream-100: #f4efe3;
+  --color-cream-200: #e9dfc9;
+}
+
+:root {
+  --hotel-gold: #c9a86a;
+  --hotel-ink: #101f38;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #f1f4f8;
+  color: #1e293b;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* ---- scrollbar ---- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #e8edf3;
+}
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #1a2f52, #c9a86a);
+  border-radius: 8px;
+  border: 2px solid #e8edf3;
+}
+
+/* ---- animaciones (livianas, solo entrada; sin loops infinitos) ---- */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+
+/* Las clases propias van en @layer components para que las utilidades
+   de Tailwind (pl-11, pr-12, etc.) puedan ajustarlas cuando se combinan.
+   Sin esto, el padding de .input-modern tapaba el de los iconos y el
+   texto se escribía encima del icono / debajo del botón del ojo. */
+@layer components {
+.anim-fade-up {
+  animation: fade-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: transform, opacity;
+}
+.anim-fade-in {
+  animation: fade-in 0.25s ease both;
+}
+/* La animación de zoom infinito anterior (18s) mantenía la GPU
+   repintando las fotos grandes de forma permanente → lag.
+   Se conserva la clase como no-op por compatibilidad. */
+.anim-zoom-slow {
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-fade-up,
+  .anim-fade-in {
+    animation: none;
+  }
+}
+
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.12s; }
+.stagger-3 { animation-delay: 0.19s; }
+.stagger-4 { animation-delay: 0.26s; }
+.stagger-5 { animation-delay: 0.33s; }
+
+/* ---- utilidades visuales ---- */
+.glass {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+/* Renderiza las tarjetas fuera de pantalla de forma diferida */
+.card-hover,
+.anim-fade-up {
+  content-visibility: auto;
+}
+.card-hover:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 18px 40px -18px rgba(16, 31, 56, 0.35);
+}
+
+.input-modern {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 0.8rem;
+  font-size: 0.9rem;
+  background: #fff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  outline: none;
+}
+.input-modern:focus {
+  border-color: var(--hotel-gold);
+  box-shadow: 0 0 0 4px rgba(201, 168, 106, 0.18);
+}
+.input-modern:disabled {
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
+.label-modern {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #475569;
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+}
+
+.btn-gold {
+  background: linear-gradient(135deg, #ddbe7e 0%, #c9a86a 45%, #a98347 100%);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 10px 25px -10px rgba(201, 168, 106, 0.8);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+.btn-gold:hover {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+  box-shadow: 0 16px 30px -10px rgba(201, 168, 106, 0.85);
+}
+.btn-gold:active {
+  transform: translateY(0);
+}
+
+.table-modern thead th {
+  background: #0f1f38;
+  color: #e9dfc9;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 0.85rem 1.25rem;
+  text-align: left;
+  white-space: nowrap;
+}
+.table-modern thead th:first-child {
+  border-top-left-radius: 1rem;
+}
+.table-modern thead th:last-child {
+  border-top-right-radius: 1rem;
+}
+.table-modern tbody td {
+  padding: 0.9rem 1.25rem;
+  font-size: 0.88rem;
+  vertical-align: middle;
+}
+.table-modern tbody tr {
+  transition: background 0.18s ease;
+}
+.table-modern tbody tr:hover {
+  background: #faf8f3;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+  border-radius: 0.75rem;
+}
+} /* fin @layer components */
+
+/* Oculta los botones nativos de Edge (X para limpiar y ojo de contraseña),
+   que se superponen al texto y al botón propio del login. */
+input::-ms-clear,
+input::-ms-reveal {
+  display: none;
+  width: 0;
+  height: 0;
+}

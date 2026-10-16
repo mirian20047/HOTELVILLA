@@ -1,0 +1,365 @@
+================================================================================
+ ANALISIS COMPLETO DEL SISTEMA - HOTEL LA VILLA DE ROEL
+ Sistema de Gestion Hotelera (Reservas, Huespedes, Folios, Reportes)
+ Fecha de analisis: 2026-10-16
+ Carpeta principal: hotel_la_villa_de_roel/
+ Archivo: ANALISIS_SISTEMA.txt
+================================================================================
+
+--------------------------------------------------------------------------------
+ 1. FICHA GENERAL DEL PROYECTO
+--------------------------------------------------------------------------------
+ Nombre        : Hotel La Villa de Roel - Sistema de Gestion Hotelera
+ Tipo          : Aplicacion Web Full-Stack (Monolito desacoplado Frontend/Backend)
+ Arquitectura  : Cliente-Servidor REST + SPA
+  - Backend  : API REST en Python (FastAPI) -> /api/*
+  - Frontend : SPA en React + TypeScript (Vite) -> puerto 5173
+  - BD       : MySQL  (base: gestion_hotelera) via SQLAlchemy + PyMySQL
+  - Auth     : JWT Bearer (python-jose HS256) + bcrypt + roles
+ Idioma codigo : Backend en espanol (tablas, variables), Frontend TSX en espanol
+ Estado        : Proyecto funcional con optimizaciones de rendimiento ya aplicadas
+                 (GZip, pool MySQL, lazy-loading, cache GET 30s, content-visibility)
+
+ Estructura raiz:
+  hotel_la_villa_de_roel/
+   ├── backend/    -> API FastAPI + MySQL + scripts utilitarios
+   ├── frontend/   -> SPA React+Vite+Tailwind
+   ├── .venv/      -> entorno virtual raiz (duplicado, el real usado es backend/venv/)
+   └── ANALISIS_SISTEMA.txt (este archivo)
+
+--------------------------------------------------------------------------------
+ 2. HERRAMIENTAS USADAS PARA HACER ESTE ANALISIS (como se construyo este informe)
+--------------------------------------------------------------------------------
+ Este informe NO es manual: se genero por inspeccion automatica del codigo con:
+
+  a) Agente IA: Muse Spark (modelo muse-spark-1.3-contributor-free) via OpenCode.
+  b) Herramientas de inspeccion (tool calls):
+     - read   : lectura de archivos y directorios (backend/, frontend/, main.py,
+                 config.py, App.tsx, axios.ts, package.json, .env [solo claves],
+                 modelos, servicios, index.css, etc.)
+     - glob   : listado recursivo de patrones (backend **/*.*, frontend src/**/*.*)
+                 -> detecto 9 routers, 8 modelos, 7 servicios, 8 schemas,
+                    9 paginas, 5 componentes.
+     - grep   : busqueda regex `^import |^from ` en backend/app para extraer
+                 dependencias reales (FastAPI, SQLAlchemy, jose, bcrypt, etc.)
+     - bash (PowerShell 5.1 en Windows win32):
+                 python --version -> Python 3.14.6
+                 backend/venv/Scripts/pip.exe list -> versiones exactas backend
+                 node --version -> v24.18.0 / npm 11.16.0
+                 Get-ChildItem backend/app/{routers,models,services,schemas}
+                 Get-Content backend/.env (solo nombres de claves, sin valores)
+                 Get-Content backend/generar.py, tsconfig.app.json
+     - todowrite : planificacion en 3 tareas (backend, frontend, generar TXT)
+     - write  : escritura de este TXT en la carpeta principal.
+  c) Verificacion: versiones cruzadas entre pip list (backend/venv) y
+     package.json (frontend). requirements.txt esta VACIO (0 lineas) -> la
+     fuente de verdad es `backend/venv` + imports. Ver seccion 10.
+
+--------------------------------------------------------------------------------
+ 3. BACKEND - STACK TECNOLOGICO (versiones reales de backend/venv/pip list)
+--------------------------------------------------------------------------------
+ Lenguaje : Python 3.14.6 (venv en backend/venv/, Python MSC v.1944 64bit)
+
+ Framework y servidor:
+  - fastapi 0.141.1 + starlette 1.4.1 (API, routers, middlewares, StaticFiles)
+  - uvicorn 0.52.1 (servidor ASGI para dev/prod)
+  - python-multipart 0.0.32 (subida de imagenes UploadFile/File en habitaciones)
+  - Pillow 12.3.0 (procesamiento imagenes tipos de habitacion)
+
+ Base de datos / ORM:
+  - SQLAlchemy 2.0.51 (engine, sessionmaker, declarative_base, relationships)
+  - PyMySQL 1.2.0 (driver mysql+pymysql://root:root@localhost:3306/gestion_hotelera)
+  - greenlet 3.5.4 (dependencia SQLAlchemy)
+
+ Seguridad / Auth:
+  - python-jose 3.5.0 [cryptography 50.0.0, ecdsa 0.19.2, rsa 4.9.1,
+    pyasn1 0.6.4, six 1.17.0] (JWT HS256, OAuth2PasswordBearer)
+  - bcrypt 3.2.2 en venv (nativo, sin passlib para hash; passlib 1.7.4 instalado
+    pero no usado en auth_service.py) + bcrypt 4.0.1 global
+  - cffi 2.1.1 + pycparser 3.0 (soporte bcrypt/cryptography)
+
+ Validacion / config:
+  - pydantic 2.13.4 + pydantic_core 2.46.4 + annotated-types 0.8.0,
+    annotated-doc 0.0.5, typing_extensions 4.16.0, typing-inspection 0.4.2
+  - email-validator 2.3.0 + dnspython 2.8.0 + idna 3.18 (EmailStr en schemas)
+  - python-dotenv 1.2.2 (carga .env)
+  - click 8.4.2, h11 0.16.0, anyio 4.14.2, colorama 0.4.6 (transitivas)
+
+ requirements.txt = VACIO. Reconstruido inferido seria:
+  fastapi, uvicorn, sqlalchemy, pymysql, pydantic[email], python-jose[cryptography],
+  bcrypt, passlib, python-dotenv, python-multipart, pillow, greenlet
+
+--------------------------------------------------------------------------------
+ 4. BACKEND - COMO ESTA CONSTRUIDO (arquitectura por capas)
+--------------------------------------------------------------------------------
+ Patron: Capas FastAPI clasico -> Router -> Service -> Model/Schema -> MySQL
+         + config centralizada + migracion idempotente en startup.
+
+  backend/
+   ├── .env               -> claves: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD,
+  │                          DB_NAME, SECRET_KEY, ALGORITHM,
+  │                          ACCESS_TOKEN_EXPIRE_MINUTES (480 min = 8h por defecto)
+   ├── app/
+   │   ├── __init__.py (vacio)
+   │   ├── config.py    -> DATABASE_URL hardcodeada
+   │   │                    mysql+pymysql://root:root@localhost:3306/gestion_hotelera
+   │   │                    SECRET_KEY/ALGORITHM/EXPIRE desde .env con fallback
+   │   │                    engine con pool_size=10, max_overflow=20,
+   │   │                    pool_pre_ping=True, pool_recycle=3600, echo=False
+   │   │                    SessionLocal + Base + get_db() (yield/close)
+   │   ├── main.py      -> FastAPI(title="Sistema de Gestion Hotelera...",
+   │   │                    version 1.0.0)
+   │   │                    Middlewares: CORSMiddleware (origins 5173 y 3000,
+   │   │                    allow_credentials, allow_methods/headers *),
+   │   │                    GZipMiddleware(minimum_size=1024, ~70% menos trafico)
+   │   │                    StaticFiles: uploads/ -> montado en /api/uploads
+   │   │                    (para que proxy Vite /api->8000 lo cubra)
+   │   │                    Evento startup: SHOW COLUMNS Tipos_Habitacion;
+   │   │                    si falta imagen_url -> ALTER TABLE ADD VARCHAR(500)
+   │   │                    Routers con prefix /api/auth y /api + tags.
+   │   │                    GET / (bienvenida) y GET /api/health (SELECT 1)
+   │   ├── models/ (8 tablas SQLAlchemy, __init__.py las re-exporta)
+   │   │   ├── usuario.py   -> Usuario (username unico, password_hash, rol,
+   │   │   │                    estado Activo/Inactivo, relaciones reservas_registro)
+   │   │   ├── cliente.py   -> Cliente (tipo/numero documento, nombres, email,
+   │   │   │                    telefono, nacionalidad, tipo_cliente, estado)
+   │   │   ├── habitacion.py-> TipoHabitacion (nombre unico, capacidad, descripcion,
+   │   │   │                    tipo_cama, amenities TEXT, tarifa_base DECIMAL 10,2,
+   │   │   │                    estado, imagen_url 500) + Habitacion (numero unico,
+   │   │   │                    FK tipo index, piso, estado_actual index default
+   │   │   │                    Disponible) + Historial_Estado_Habitaciones
+   │   │   ├── reserva.py   -> Reserva (codigo unico, fecha_entrada/salida index,
+   │   │   │                    canal, estado_reserva index default Pendiente,
+   │   │   │                    monto_total_estimado/pagado Float, estado_pago,
+   │   │   │                    FK cliente/tipo/habitacion(nullable)/usuario)
+   │   │   ├── huesped.py   -> Huesped (hospedaje: FK reserva/cliente/habitacion,
+   │   │   │                    checkin/checkout, estado_hospedaje, usuarios)
+   │   │   ├── folio.py     -> Folio (cuenta de cobro por hospedaje)
+   │   │   ├── pago.py      -> Pago (abonos a folio/reserva)
+   │   │   └── servicio.py  -> TipoServicio (catalogo servicios extra)
+   │   ├── schemas/ (Pydantic v2 Request/Response, 8 archivos)
+   │   │       cliente (EmailStr), habitacion, reserva (date/datetime),
+   │   │       huesped (CheckInCreate), folio/pago/servicio (Decimal),
+   │   │       usuario (LoginRequest, TokenResponse, UsuarioCreate/Update/Response)
+   │   ├── routers/ (9 routers, todos con APIRouter + Session Depends(get_db))
+   │   │   ├── auth.py        -> POST /api/auth/login (generar_token_login),
+   │   │   │                    bcrypt.checkpw + jwt.encode sub/rol/id_usuario
+   │   │   ├── clientes.py    -> CRUD /clientes
+   │   │   ├── habitaciones.py-> CRUD habitaciones + tipos + UploadFile imagen
+   │   │   │                    (os, uuid, io; guarda en uploads/tipos/)
+   │   │   ├── reservas.py    -> CRUD reservas + calculo noches*tarifa,
+   │   │   │                    validacion solape fechas
+   │   │   ├── huespedes.py   -> check-in/out (joinedload, cambia estado
+   │   │   │                    habitacion + historial + folio/pago, requiere auth)
+   │   │   ├── folios.py + pagos.py -> folios, cargos, pagos, saldos
+   │   │   ├── reportes.py    -> agregados func.count/sum (ocupacion, ingresos,
+   │   │   │                    reservas, huespedes-recientes, checkouts-stats,
+   │   │   │                    alertas-limpieza; usa time para medir)
+   │   │   └── usuarios.py    -> CRUD usuarios (require_role Administrador,
+   │   │                        obtener_password_hash bcrypt)
+   │   └── services/ (7 servicios logica reutilizable)
+   │       ├── auth_service.py (nucleo: verificar_password, obtener_password_hash,
+   │       │                    crear_token_acceso, autenticar_usuario,
+   │       │                    generar_token_login, get_current_user JWT decode,
+   │       │                    require_role(lista) -> 403 si rol no permitido)
+   │       ├── cliente/habitacion/reserva/huesped/folio/pago_service.py
+   │       │   (calculos, validaciones, transiciones estado)
+   ├── tests/test_calculos.py -> 5 pruebas unitarias puras sin BD (EFSRT IV):
+   │       noches, total, pago suficiente, conflicto fechas, formatear fecha;
+   │       runner ejecutar_todas_las_pruebas() con prints, no usa pytest asserts
+   │       de framework (assert nativo + return True).
+   ├── generar.py / generar_hash.py -> generan hashes bcrypt de admin/admin123
+   │       y recepcionista/recepcionista123 para pegar en MySQL Workbench.
+   ├── reset_passwords.py (608 bytes) -> resetea passwords en BD.
+   ├── uploads/ (vacio en repo; en runtime uploads/tipos/ con fotos, servido
+   │       como estatico)
+   └── venv/ (entorno real) + README.md vacio.
+
+ Flujo tipico: Request -> CORS/GZip -> Router valida schema -> Service (auth/
+  calculo) -> SQLAlchemy Session (pool) -> MySQL -> Response JSON (+ GZip).
+
+--------------------------------------------------------------------------------
+ 5. FRONTEND - STACK TECNOLOGICO (de package.json + configs)
+--------------------------------------------------------------------------------
+ Gestor       : npm 11.16.0, Node v24.18.0
+ Bundler/dev  : vite ^8.2.0 + @vitejs/plugin-react ^6.0.4 (puerto 5173,
+                proxy /api -> http://127.0.0.1:8000 changeOrigin true)
+ Lenguaje     : TypeScript ~6.0.2 (tsconfig.app.json: target es2023, lib ES2023+DOM,
+                module esnext, bundler resolution, jsx react-jsx, noEmit,
+                strict + noUnusedLocals/Parameters, erasableSyntaxOnly)
+ UI           : react ^19.2.8 + react-dom ^19.2.8 (StrictMode, createRoot),
+                react-router-dom ^7.18.2 (BrowserRouter, Routes, Navigate),
+                react-icons ^5.7.0, react-hot-toast ^2.6.0 (Toaster top-right 3s)
+ Estilos      : tailwindcss ^4.3.3 + @tailwindcss/vite ^4.3.3 (import "tailwindcss"
+                en index.css, @theme con fonts Inter/Fraunces y paleta ink/gold/
+                cream, clases .btn-gold, .card-hover, .input-modern, .table-modern,
+                .skeleton, animaciones fade-up/fade-in/shimmer, scrollbar custom)
+                tailwind.config.js legacy con hotel-primary #F97316 etc. (convive
+                con v4 @theme).
+ HTTP         : axios ^1.19.0 (instancia baseURL /api, timeout 15000, interceptores)
+ Lint         : oxlint ^1.75.0 (script lint, config .oxlintrc.json)
+ Tipos Node   : @types/node ^24.13.3, @types/react ^19.2.17, @types/react-dom ^19.2.3
+ Build        : `tsc -b && vite build` -> dist/ (ya existe), preview via vite preview
+ HTML         : index.html lang es, favicon.svg, fonts Google Fraunces+Inter,
+                title "La Villa de Roel", meta descripcion, div#root + /src/main.tsx
+
+--------------------------------------------------------------------------------
+ 6. FRONTEND - COMO ESTA CONSTRUIDO (SPA modular)
+--------------------------------------------------------------------------------
+  frontend/
+   ├── index.html, vite.config.ts, tailwind.config.js, tsconfig*.json,
+   │   package.json/lock, .gitignore, README.md, public/ (favicon, imgs),
+   │   dist/ (build), node_modules/
+   └── src/
+       ├── main.tsx        -> StrictMode + App
+       ├── App.tsx         -> BrowserRouter + Suspense + lazy() por pagina
+       │                      (bundle 410KB->150KB inicial, fallback spinner dorado)
+       │                      Rutas: /login (publica), / (Layout) -> dashboard,
+       │                      clientes, habitaciones, reservas, checkin (libres si
+       │                      hay token), reportes/tipos-habitacion/usuarios
+       │                      (ProtectedRoute allowedRoles=[Administrador]),
+       │                      * -> /login. Toaster global.
+       ├── api/axios.ts    -> instancia api + cache Map GET 30s (CACHE_TTL 30000)
+       │                      CACHEABLE: /clientes, /habitaciones,
+       │                      /habitaciones-disponibles, /tipos-habitacion,
+       │                      /reservas, /huespedes, /reportes/* (ocupacion,
+       │                      ingresos, reservas, huespedes-recientes),
+       │                      /checkouts-estadisticas, /alertas-limpieza, /usuarios.
+       │                      Request: inyecta Bearer token + sirve cache via adapter
+       │                      falso. Response: puebla cache GET 200, invalida todo
+       │                      en POST/PUT/PATCH/DELETE. Error 401: si no es login
+       │                      y no esta en /login -> limpia token/usuario/cache y
+       │                      redirige /login (en login solo toast, sin reload).
+       ├── components/
+       │   ├── Layout.tsx          -> shell (Sidebar+Header+Outlet)
+       │   ├── Sidebar.tsx         -> nav lateral por rol
+       │   ├── Header.tsx          -> barra superior (usuario, logout)
+       │   ├── ProtectedRoute.tsx  -> verifica rol vs allowedRoles (-> /login o 403)
+       │   └── ui.tsx              -> primitivas (botones, inputs, cards, tablas)
+       ├── pages/ (9 lazy)
+       │   ├── Login.tsx           -> form, guarda token+usuario en localStorage,
+       │   │                          toast error sin parpadeo
+       │   ├── Dashboard.tsx       -> 6 endpoints (usa cache), KPIs ocupacion/ingresos
+       │   ├── Clientes/Reservas/Habitaciones/TiposHabitacion/CheckIn/Reportes/
+       │   │   Usuarios.tsx -> CRUD + tablas .table-modern + .input-modern
+       ├── hooks/usePerf.tsx       -> hook rendimiento (medicion?)
+       ├── utils/imagen.ts         -> helper URL imagenes (/api/uploads/...)
+       ├── types/index.ts          -> Usuario, LoginResponse, Cliente, Habitacion,
+       │                              Reserva, Huesped (contratos API)
+       ├── index.css (225 lineas)  -> @theme, animaciones, glass, btn-gold, etc.
+       └── App.css + assets (react.svg, vite.svg, hero.png)
+
+ Flujo: Login -> token localStorage -> axios inyecta header -> Vite proxy /api
+        -> FastAPI valida JWT -> MySQL -> JSON (+GZip) -> cache 30s -> render.
+        Escrituras limpian cache para frescura.
+
+--------------------------------------------------------------------------------
+ 7. BASE DE DATOS (MySQL)
+--------------------------------------------------------------------------------
+ Motor : MySQL (localhost:3306, gestion_hotelera, user root/root en config.py)
+ Acceso: SQLAlchemy engine pool 10+20, pre_ping, recycle 3600h
+ Tablas (8 modelos): Usuarios, Clientes, Tipos_Habitacion (+imagen_url),
+   Habitaciones (+Historial_Estado_Habitaciones), Reservas (con montos y
+   estado_pago + FK habitacion nullable para asignacion tardia),
+   Huespedes/Hospedaje (checkin/out), Folios, Pagos, Tipos_Servicio.
+ Indices: FKs y fechas/estados (fecha_entrada/salida, estado_reserva,
+   estado_actual, id_cliente/habitacion) para reportes rapidos.
+ Migracion: startup ALTER TABLE Tipos_Habitacion ADD imagen_url si falta.
+ Variables .env: DB_HOST/PORT/USER/PASSWORD/NAME (no usadas en config.py actual,
+   que tiene URL hardcodeada -> mejorar), SECRET_KEY, ALGORITHM HS256,
+   ACCESS_TOKEN_EXPIRE_MINUTES 480.
+
+--------------------------------------------------------------------------------
+ 8. SEGURIDAD, RENDIMIENTO Y COMUNICACION
+--------------------------------------------------------------------------------
+ Seguridad:
+  - Passwords bcrypt gensalt/checkpw (nunca plano). Scripts generar/reset.
+  - JWT HS256 con sub=username, rol, id_usuario, exp 8h. OAuth2 Bearer.
+  - get_current_user decodifica y busca usuario; require_role protege
+    reportes/usuarios/tipos (solo Administrador). Frontend replica con
+    ProtectedRoute + isAuthenticated (token en localStorage).
+  - CORS restringido a 5173/3000. Validacion EmailStr, Decimal, schemas.
+  - Riesgos: SECRET_KEY fallback hardcodeado, DATABASE_URL con credenciales en
+    codigo, token en localStorage (XSS), sin HTTPS/refresh/rate-limit.
+
+ Rendimiento (ya optimizado, comentado en codigo):
+  - Backend: pool conexiones (evita conectar por request), GZip >1KB (-70%),
+    joinedload en huespedes (evita N+1), agregados SQL en reportes.
+  - Frontend: lazy pages (-260KB inicial), cache GET memoria 30s (dashboard/
+    checkin instantaneos en revisita), content-visibility auto en cards,
+    animaciones solo entrada (se elimino zoom infinito 18s que laggeaba GPU),
+    shimmer skeletons, debounce presumible en buscadores.
+
+ Comunicacion:
+  Dev: React 5173 --/api--> Vite proxy -> FastAPI 8000 (+ /api/uploads estatico)
+  Prod: dist/ servido + API 8000 (o mismo dominio /api). Contratos en types/index.ts
+        vs schemas Pydantic deben mantenerse sincronizados manualmente.
+
+--------------------------------------------------------------------------------
+ 9. COMO EJECUTAR / CONSTRUIR (inferido del codigo)
+--------------------------------------------------------------------------------
+ Backend:
+  cd backend
+  backend/venv/Scripts/python.exe -m uvicorn app.main:app --reload --port 8000
+  # requiere MySQL gestion_hotelera creado + .env + pip install
+  # (requirements.txt vacio -> instalar lista seccion 3 manualmente)
+  # health: GET http://127.0.0.1:8000/api/health -> {"status":"Conectado..."}
+  # docs: /docs (Swagger) por FastAPI
+
+ Frontend:
+  cd frontend
+  npm install
+  npm run dev      # vite 5173 con proxy /api
+  npm run build    # tsc -b && vite build -> dist/
+  npm run preview  # previsualizar build
+  npm run lint     # oxlint
+
+ Cuentas semilla: admin/admin123 (Administrador), recepcionista/recepcionista123
+  (hashes via generar.py -> pegar en MySQL Workbench, o reset_passwords.py).
+
+ Tests: backend/tests/test_calculos.py -> python tests/test_calculos.py
+        (no pytest; 5 pruebas puras, imprime resumen x/5).
+
+--------------------------------------------------------------------------------
+ 10. DIAGNOSTICO RAPIDO / MEJORAS SUGERIDAS
+--------------------------------------------------------------------------------
+ OK: separacion capas, JWT+roles end-to-end, pool+GZip+cache+lazy bien
+     documentados en comentarios, historial estados habitacion, folios/pagos
+     con saldos, reportes agregados, uploads servidos bajo /api.
+ A MEJORAR:
+  1) requirements.txt vacio -> congelar `pip freeze > requirements.txt`.
+  2) config.py ignora DB_* del .env (URL hardcodeada root/root) -> armar URL
+     desde env + sin credenciales en repo.
+  3) SECRET_KEY por defecto en codigo -> exigir env en prod, rotar.
+  4) .venv raiz duplicado + backend/venv comiteado -> unificar y gitignore.
+  5) Tests solo logica pura -> agregar pytest + httpx TestClient + cobertura
+     routers/auth y solapes.
+  6) Sincronizar types TS vs schemas Pydantic (generar OpenAPI types).
+  7) Token localStorage -> considerar httpOnly cookie + refresh + logout server.
+  8) README.md vacios (raiz/backend/frontend) -> documentar setup.
+  9) Validar Pillow resize/compresion uploads + limite tamano + tipos MIME.
+ 10) CORS + GZip OK, falta rate-limit, logging estructurado, /health con DB ping.
+
+--------------------------------------------------------------------------------
+ 11. ARBOL RESUMIDO (relevado por glob)
+--------------------------------------------------------------------------------
+ backend/app/routers: auth, clientes, habitaciones, reservas, huespedes,
+                      folios, pagos, reportes, usuarios (+__init__)
+ backend/app/models : usuario, cliente, habitacion(+Tipo+Historial), reserva,
+                      huesped, folio, pago, servicio (+__init__)
+ backend/app/schemas: usuario, cliente, habitacion, reserva, huesped, folio,
+                      pago, servicio (+__init__)
+ backend/app/services: auth_service, cliente, habitacion, reserva, huesped,
+                       folio, pago (+__init__)
+ frontend/src/pages : Login, Dashboard, Clientes, Habitaciones, TiposHabitacion,
+                      Reservas, CheckIn, Reportes, Usuarios
+ frontend/srcRest   : App, main, api/axios, components(5), hooks/usePerf,
+                      utils/imagen, types, index.css, App.css, assets(3)
+
+ Total aprox: ~40 archivos fuente Python + ~25 TS/TSX/CSS + configs.
+
+================================================================================
+ FIN DEL ANALISIS
+ Generado automaticamente por inspeccion de codigo (read/glob/grep/bash).
+ Para regenerar, repetir exploracion tras cambios en routers/models/pages.
+================================================================================
